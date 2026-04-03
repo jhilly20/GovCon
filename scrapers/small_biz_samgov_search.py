@@ -54,7 +54,7 @@ API_URL = "https://api.monday.com/v2"
 HEADERS_MD = {"Authorization": MONDAY_API_KEY, "Content-Type": "application/json"}
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
-SLACK_CHANNEL = os.getenv("CUAS_SLACK_CHANNEL", "") # CUAS-specific channel
+SLACK_CHANNEL = os.getenv("SLACK_CHANNEL", "")
 
 # ===SAM.gov FUNCTIONS ===
 def sam_search():
@@ -187,7 +187,7 @@ def monday_create_item(title, agency, close_date_val, link, open_date_val,
         AGENCY_COLUMN: agency or "Unknown",
         DUEDATE_COLUMN: close_date_val,
         LINK_COLUMN: link,
-        "text_mktm7tsx": "C-UXS sam.gov",   # Source
+        "text_mktm7tsx": "small biz setaside 541715 sam.gov",   # Source
         "date4": open_date_val,              # Open Date
         "text_mkkqftmh": tpoc_name,          # TPOC
         "tpoc_email_mkkqgfsv": {"email": tpoc_email, "text": tpoc_name or tpoc_email} if tpoc_email else None,   # TPOC email
@@ -266,7 +266,7 @@ def slack_bot_post_new_items(new_items):
         return
 
     # Build a clean message with links
-    lines = [f"*🆕 {len(new_items)} new C-UXS SAM.gov opportunities for NAICS 541715 small biz or partial set aside*"]
+    lines = [f"*🆕 {len(new_items)} new Small Biz SAM.gov opportunities (NAICS 541715 set-aside)*"]
     for it in new_items[:30]:  # avoid super long posts; send top 30
         title = it.get("title", "(no title)")
         topic = it.get("topic", "")
@@ -298,7 +298,7 @@ def slack_bot_notify_no_results(count=0):
         return
 
     text = (
-        f"✅ *C-UXS SAM.gov scan completed successfully* – checked {count} C-UXS opportunities, "
+        f"✅ *Small Biz SAM.gov scan completed successfully* – checked {count} small biz opportunities, "
         f"no new ones found today.\n"
         f"_(Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')})_"
     )
