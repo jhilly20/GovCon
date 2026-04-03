@@ -190,7 +190,7 @@ def monday_create_item(title, agency, close_date_val, link, open_date_val,
         "text_mktm7tsx": "C-UXS sam.gov",   # Source
         "date4": open_date_val,              # Open Date
         "text_mkkqftmh": tpoc_name,          # TPOC
-        "tpoc_email_mkkqgfsv": {"email": tpoc_email, "text": tpoc_name or tpoc_email},   # TPOC email
+        "tpoc_email_mkkqgfsv": {"email": tpoc_email, "text": tpoc_name or tpoc_email} if tpoc_email else None,   # TPOC email
         "tpoc_phone_mkmfav28": tpoc_phone,   # TPOC phone
         "text_mkktdh29": topic_no,           # Topic No
         "text_mkkqeet2": description,        # Description
