@@ -17,7 +17,7 @@ A collection of Python scrapers for monitoring government procurement and resear
 | `custom_samgov_search.py` | SAM.gov | Custom SAM.gov search example (formerly Cognition) |
 | `small_biz_samgov_search.py` | SAM.gov | NAICS 541715 small business set-aside opportunities |
 | `industry_day_scraper.py` | SAM.gov | Industry Day events and conferences |
-| `challenge_gov_scraper.py` | Challenge.gov | Federal challenge competitions and prizes |
+| `challenge_gov_scraper.py` | USA.gov | Federal challenge competitions and prizes (formerly Challenge.gov, now scraped from [usa.gov/find-active-challenge](https://www.usa.gov/find-active-challenge)) |
 | `sda_scraper.py` | SDA | Space Development Agency opportunities |
 | `cfic/` | CFIC / ARCYBER | CyberFIC collaboration events, webinars, and assessments |
 

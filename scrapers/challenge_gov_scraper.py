@@ -1,9 +1,10 @@
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -12,9 +13,10 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 import requests
 from bs4 import BeautifulSoup
 
-# Challenge.gov configuration
-CHALLENGE_GOV_BASE_URL = "https://www.challenge.gov"
-CHALLENGE_GOV_LIST_URL = "https://portal.challenge.gov/api/challenges"
+# USA.gov challenges configuration
+# Challenge.gov has been deprecated; active challenges are now listed on USA.gov
+USAGOV_BASE_URL = "https://www.usa.gov"
+USAGOV_CHALLENGES_URL = "https://www.usa.gov/find-active-challenge"
 
 # Monday.com configuration
 MONDAY_API_KEY = os.getenv("MONDAY_API_KEY", "")
@@ -25,7 +27,7 @@ MONDAY_API_URL = "https://api.monday.com/v2"
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 DEFAULT_SLACK_CHANNEL = os.getenv("SLACK_CHANNEL")
 
-# Monday.com column mappings for challenge.gov
+# Monday.com column mappings for challenges
 TITLE_COLUMN = "text_mkkqwaty"  # Item name is used automatically, but we'll also store in this column
 DESCRIPTION_COLUMN = "text_mkkqeet2"
 URL_COLUMN = "text_mkkq2vab"
@@ -35,14 +37,16 @@ AGENCY_COLUMN = "text_mkvqfmz5"
 SOURCE_COLUMN = "text_mktm7tsx"
 
 # Headers for web requests
-CHALLENGE_GOV_HEADERS = {
+REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.challenge.gov/",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
+# Polite delay between detail-page requests (seconds)
+REQUEST_DELAY = 1.0
 
 MUTATION = """
 mutation ($board_id: ID!, $item_name: String!, $column_values: JSON!) {
@@ -68,37 +72,45 @@ def format_monday_date(date_str: Optional[str]) -> Optional[Dict[str, str]]:
     if not date_str:
         return None
     try:
-        # Challenge.gov dates are typically in various formats, try to parse them
-        # Common formats: "2024-12-31", "12/31/2024", "December 31, 2024"
         date_obj = None
-        
+
         # Try ISO format first
         try:
             date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         except ValueError:
             pass
-        
+
+        # Try M/D/YYYY H:MM AM/PM ET format (common on usa.gov detail pages)
+        if not date_obj:
+            cleaned = re.sub(r"\s*(ET|EST|EDT|CT|PT)\s*$", "", date_str.strip())
+            for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y"):
+                try:
+                    date_obj = datetime.strptime(cleaned, fmt)
+                    break
+                except ValueError:
+                    continue
+
         # Try MM/DD/YYYY format
         if not date_obj:
             try:
-                date_obj = datetime.strptime(date_str, "%m/%d/%Y")
+                date_obj = datetime.strptime(date_str.strip(), "%m/%d/%Y")
             except ValueError:
                 pass
-        
+
         # Try Month DD, YYYY format
         if not date_obj:
             try:
-                date_obj = datetime.strptime(date_str, "%B %d, %Y")
+                date_obj = datetime.strptime(date_str.strip(), "%B %d, %Y")
             except ValueError:
                 pass
-        
+
         # Try YYYY-MM-DD format
         if not date_obj:
             try:
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                date_obj = datetime.strptime(date_str.strip(), "%Y-%m-%d")
             except ValueError:
                 pass
-        
+
         if date_obj:
             return {"date": date_obj.strftime("%Y-%m-%d")}
         return None
@@ -110,29 +122,115 @@ def normalize_name(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
 
-def fetch_challenge_list(session: requests.Session) -> Iterable[Dict[str, Any]]:
-    """Fetch the list of current challenges from challenge.gov API"""
+def fetch_challenge_list(session: requests.Session) -> List[Dict[str, Any]]:
+    """Scrape the USA.gov active-challenges listing page.
+
+    Returns a list of dicts with keys: title, description, url, detail_path.
+    """
+    challenges: List[Dict[str, Any]] = []
     try:
-        resp = session.get(CHALLENGE_GOV_LIST_URL, headers=CHALLENGE_GOV_HEADERS, timeout=30)
+        resp = session.get(USAGOV_CHALLENGES_URL, headers=REQUEST_HEADERS, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("collection", [])
+        soup = BeautifulSoup(resp.text, "lxml")
+
+        cards = soup.select("div.usagov-cards li.usa-card")
+        for card in cards:
+            link = card.find("a", class_="usa-card__container")
+            if not link:
+                continue
+
+            heading = link.find("h2")
+            title = heading.get_text(strip=True) if heading else ""
+
+            body = link.find("div", class_="usa-card__body")
+            description = body.get_text(strip=True) if body else ""
+
+            href = link.get("href", "")
+            full_url = href if href.startswith("http") else f"{USAGOV_BASE_URL}{href}"
+
+            challenges.append({
+                "title": title,
+                "description": description,
+                "url": full_url,
+                "detail_path": href,
+            })
     except Exception as e:
-        log(f"Error fetching challenge list: {e}")
-        return []
+        log(f"Error fetching challenge list from USA.gov: {e}")
+
+    return challenges
 
 
-def fetch_challenge_detail(session: requests.Session, challenge_url: str) -> Dict[str, Any]:
-    """Fetch detailed information for a specific challenge"""
+def fetch_challenge_detail(session: requests.Session, detail_url: str) -> Dict[str, Any]:
+    """Scrape a USA.gov challenge detail page for structured data.
+
+    Parses the 'Key information' table to extract agency, dates, prize, etc.
+    """
+    detail: Dict[str, Any] = {}
     try:
-        # Challenge.gov API provides most info, but we might need to scrape the detail page for some fields
-        detail_url = f"{challenge_url}?format=json" if not challenge_url.endswith("?format=json") else challenge_url
-        resp = session.get(detail_url, headers=CHALLENGE_GOV_HEADERS, timeout=30)
+        resp = session.get(detail_url, headers=REQUEST_HEADERS, timeout=30)
         resp.raise_for_status()
-        return resp.json()
+        soup = BeautifulSoup(resp.text, "lxml")
+
+        # Parse the "Key information" table
+        table = soup.find("table", class_="usa-table")
+        if table:
+            rows = table.find_all("tr")
+            for row in rows:
+                th = row.find("th")
+                td = row.find("td")
+                if not th or not td:
+                    continue
+                label = th.get_text(strip=True).lower()
+                value = td.get_text(" ", strip=True)
+
+                if "sponsoring agency" in label or "agency" in label:
+                    detail["agency"] = value
+                elif "end date" in label:
+                    detail["end_date"] = value
+                elif "start date" in label:
+                    detail["start_date"] = value
+                elif "prize" in label:
+                    detail["prize_text"] = value
+                elif "challenge type" in label:
+                    detail["challenge_type"] = value
+                elif "contact" in label:
+                    detail["contact"] = value
+
+        # Get the longer description from the page body
+        content_div = soup.find("div", class_="body-copy")
+        if content_div:
+            paragraphs = []
+            for elem in content_div.children:
+                if getattr(elem, "name", None) == "table":
+                    break
+                text = elem.get_text(strip=True) if hasattr(elem, "get_text") else str(elem).strip()
+                if text:
+                    paragraphs.append(text)
+            if paragraphs:
+                detail["long_description"] = " ".join(paragraphs)
+
+        # Get the apply/action link if present
+        apply_link = soup.find("a", class_="usa-button")
+        if apply_link:
+            detail["apply_url"] = apply_link.get("href", "")
+
     except Exception as e:
-        log(f"Error fetching challenge detail {challenge_url}: {e}")
-        return {}
+        log(f"Error fetching challenge detail {detail_url}: {e}")
+
+    return detail
+
+
+def parse_prize_amount(prize_text: Optional[str]) -> Optional[float]:
+    """Extract a numeric dollar amount from prize text like 'Total cash prizes: $2,500,000'."""
+    if not prize_text:
+        return None
+    match = re.search(r"\$\s*([\d,]+(?:\.\d+)?)", prize_text)
+    if match:
+        try:
+            return float(match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    return None
 
 
 def fetch_existing_challenge_titles(session: requests.Session, limit: int = 200) -> set:
@@ -188,16 +286,18 @@ def fetch_existing_challenge_titles(session: requests.Session, limit: int = 200)
             page = boards[0].get("items_page", {})
             for item in page.get("items", []):
                 name = item.get("name")
-                # Check if this item has "challenge.gov" in the source column
+                # Check if this item has a challenge source tag
                 source_value = None
                 for col in item.get("column_values", []):
                     if col.get("id") == SOURCE_COLUMN:
                         source_value = col.get("text") or col.get("value")
                         break
-                
-                # Only include titles from challenge.gov items
-                if name and source_value and "challenge.gov" in source_value.lower():
-                    titles.add(normalize_name(name))
+
+                # Include titles from challenge.gov or usa.gov challenge items
+                if name and source_value:
+                    src = source_value.lower()
+                    if "challenge" in src or "usa.gov" in src:
+                        titles.add(normalize_name(name))
             cursor = page.get("cursor")
             if not cursor:
                 break
@@ -207,44 +307,24 @@ def fetch_existing_challenge_titles(session: requests.Session, limit: int = 200)
         return set()
 
 
-def extract_challenge_fields(challenge: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract required fields from challenge data"""
+def extract_challenge_fields(challenge: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge listing-page data with detail-page data into a unified record."""
     title = challenge.get("title", "")
-    
-    # Get description - might be in 'description' field or need to construct from other fields
-    description = clean_html(challenge.get("description", ""))
-    if not description:
-        # Try to get description from other fields if available
-        description = clean_html(challenge.get("overview", ""))
-    
-    # Get URL - might be in 'url' field or need to construct from challenge ID
+
+    # Prefer longer description from the detail page
+    description = detail.get("long_description", "") or challenge.get("description", "")
+
     url = challenge.get("url", "")
-    if not url and challenge.get("id"):
-        url = f"https://www.challenge.gov/challenge/{challenge['id']}/"
-    
-    # Extract deadline from end_date field
-    deadline = None
-    end_date = challenge.get("end_date")
-    if end_date:
-        deadline = end_date
-    
-    # Extract prize amount - prize_total is in cents, convert to dollars
-    prize_amount = None
-    prize_total_cents = challenge.get("prize_total")
-    if prize_total_cents:
-        try:
-            # Convert from cents to dollars
-            prize_amount = float(prize_total_cents) / 100.0
-        except (ValueError, TypeError):
-            pass
-    
-    # Extract agency - might be in 'agency' field or need to construct
-    agency = ""
-    if challenge.get("agency"):
-        agency = challenge.get("agency", "")
-    elif challenge.get("organization"):
-        agency = challenge.get("organization", "")
-    
+
+    # Deadline = end_date from detail page
+    deadline = detail.get("end_date")
+
+    # Prize amount
+    prize_amount = parse_prize_amount(detail.get("prize_text"))
+
+    # Agency from detail page
+    agency = detail.get("agency", "")
+
     return {
         "title": title,
         "description": description,
@@ -277,7 +357,7 @@ def monday_create_item(session, title, description, url, deadline_val, prize_amo
         "item_name": title,
         "column_values": json.dumps(colvals),
     }
-    res = session.post(MONDAY_API_URL, headers={"Authorization": MONDAY_API_KEY, "Content-Type": "application/json"}, 
+    res = session.post(MONDAY_API_URL, headers={"Authorization": MONDAY_API_KEY, "Content-Type": "application/json"},
                       json={"query": MUTATION, "variables": variables})
     res.raise_for_status()
     return res.json()
@@ -318,7 +398,7 @@ def slack_bot_notify_no_results(session, count, slack_channel, header):
         return
     
     text = (
-        f"✅ *challenge.gov scan completed successfully* – checked {count} {header} opportunities, "
+        f"\u2705 *USA.gov challenge scan completed successfully* \u2013 checked {count} {header} opportunities, "
         f"no new ones found today.\n"
         f"_(Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')})_"
     )
@@ -332,13 +412,31 @@ def slack_bot_notify_no_results(session, count, slack_channel, header):
 
 
 def main():
-    """Main function to run the challenge.gov scraper"""
+    """Main function to scrape active federal challenges from USA.gov
+
+    Challenge.gov has been deprecated. Active challenges are now listed at
+    https://www.usa.gov/find-active-challenge with detail pages under
+    https://www.usa.gov/challenges/<slug>.
+    """
     session = requests.Session()
-    
-    # Fetch current challenges from challenge.gov first
-    challenges = list(fetch_challenge_list(session))
-    log(f"Fetched {len(challenges)} challenges from challenge.gov")
-    
+
+    # Fetch current challenges from USA.gov listing page
+    challenges = fetch_challenge_list(session)
+    log(f"Fetched {len(challenges)} challenges from USA.gov")
+
+    # Fetch detail pages for each challenge
+    for i, challenge in enumerate(challenges):
+        detail_url = challenge.get("url", "")
+        if detail_url:
+            detail = fetch_challenge_detail(session, detail_url)
+            challenge["detail"] = detail
+            log(f"  Fetched detail for: {challenge.get('title', '(unknown)')}")
+            # Be polite to the server
+            if i < len(challenges) - 1:
+                time.sleep(REQUEST_DELAY)
+        else:
+            challenge["detail"] = {}
+
     # Only try to fetch existing titles and create Monday.com items if API key is available
     if MONDAY_API_KEY:
         try:
@@ -352,20 +450,20 @@ def main():
         new_items = []
         
         for challenge in challenges:
-            challenge_data = extract_challenge_fields(challenge)
+            challenge_data = extract_challenge_fields(challenge, challenge.get("detail", {}))
             title = challenge_data.get("title", "")
-            
+
             if not title:
                 continue
-                
+
             title_key = normalize_name(title)
             if title_key in existing_titles:
                 continue
-            
+
             # Format deadline for Monday.com
             deadline_val = format_monday_date(challenge_data.get("deadline"))
             deadline_text = (deadline_val or {}).get("date", "")
-            
+
             if MONDAY_API_KEY:
                 try:
                     # Create Monday.com item
@@ -377,7 +475,7 @@ def main():
                         deadline_val,
                         challenge_data.get("prize_amount"),
                         challenge_data.get("agency", ""),
-                        "challenge.gov python"
+                        "usa.gov challenges python"
                     )
                     
                     existing_titles.add(title_key)
@@ -398,17 +496,25 @@ def main():
         
         # Send notifications
         if new_items:
-            slack_bot_post_new_items(session, new_items, DEFAULT_SLACK_CHANNEL, "challenge.gov")
+            slack_bot_post_new_items(session, new_items, DEFAULT_SLACK_CHANNEL, "USA.gov challenge")
             log(f"Sent Slack notification for {len(new_items)} new challenges")
         else:
-            slack_bot_notify_no_results(session, len(challenges), DEFAULT_SLACK_CHANNEL, "challenge.gov")
+            slack_bot_notify_no_results(session, len(challenges), DEFAULT_SLACK_CHANNEL, "USA.gov challenge")
             log("Sent 'no new challenges' Slack notification")
     else:
         log("Warning: missing MONDAY_API_KEY env var. Skipping Monday.com integration and Slack notifications.")
         log("Challenges found:")
-        for i, challenge in enumerate(challenges[:5]):  # Show first 5 challenges
-            challenge_data = extract_challenge_fields(challenge)
-            log(f"  Challenge {i+1}: {challenge_data.get('title', 'No title')}")
+        for i, challenge in enumerate(challenges):
+            challenge_data = extract_challenge_fields(challenge, challenge.get("detail", {}))
+            title = challenge_data.get("title", "No title")
+            agency = challenge_data.get("agency", "")
+            prize = challenge_data.get("prize_amount")
+            deadline = challenge_data.get("deadline", "")
+            prize_text = f"  Prize: ${prize:,.0f}" if prize else ""
+            agency_text = f"  Agency: {agency}" if agency else ""
+            deadline_text = f"  Deadline: {deadline}" if deadline else ""
+            log(f"  {i+1}. {title}{agency_text}{prize_text}{deadline_text}")
+            log(f"     {challenge_data.get('url', '')}")
 
 
 if __name__ == "__main__":
