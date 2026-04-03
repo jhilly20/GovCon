@@ -22,13 +22,13 @@ def get_required_env(name: str) -> str:
 
 
 # Monday.com
-MONDAY_API_TOKEN = get_required_env("MONDAY_API_TOKEN")
+MONDAY_API_TOKEN = get_required_env("MONDAY_API_KEY")
 MONDAY_BOARD_ID = get_required_env("MONDAY_BOARD_ID")
 MONDAY_API_URL = "https://api.monday.com/v2"
 
 # Slack
 SLACK_BOT_TOKEN = get_required_env("SLACK_BOT_TOKEN")
-SLACK_CHANNEL_ID = get_required_env("SLACK_CHANNEL_ID")
+SLACK_CHANNEL_ID = get_required_env("SLACK_CHANNEL")
 
 # CFIC
 CFIC_EVENTS_URL = "https://www.cyberfic.org/events"

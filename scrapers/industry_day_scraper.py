@@ -324,6 +324,7 @@ def main():
                     None,           # open_date_val
                     solnum         # topic_no                  
                 )
+            continue
           
           
         try:

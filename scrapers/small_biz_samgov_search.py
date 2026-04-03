@@ -379,6 +379,7 @@ def main():
                     desc_short,     # description
                     command         # you computed this above from orgs
                 )
+            continue
           
           
         try:
