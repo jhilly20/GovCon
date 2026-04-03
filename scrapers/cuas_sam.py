@@ -238,11 +238,11 @@ def fetch_existing_topics(session: requests.Session, limit=200, debug=False):
         data = res.json()
         if "errors" in data:
             log(f"Monday API errors: {json.dumps(data['errors'], indent=2)}")
-            return set()
+            return set(), set()
         boards = data.get("data", {}).get("boards", [])
         if not boards:
             log("Monday API returned no boards for the given board_id.")
-            return set()
+            return set(), set()
         page = boards[0].get("items_page", {})
         items = page.get("items", [])
         log(f"Monday items_page fetched {len(items)} items")
@@ -414,15 +414,15 @@ def main():
             existing_topics.add(topic_no)
             if name_key:
                 existing_names.add(name_key)
-        # Track for Slack
-        new_items.append({
-            "title": title,
-            "topic": topic_no,
-            "link": link,
-            "agency": agency,
-            "due_text": (close_date_val or {}).get("date", ""),
-            "rscore": rscore
-        })
+            # Track for Slack
+            new_items.append({
+                "title": title,
+                "topic": topic_no,
+                "link": link,
+                "agency": agency,
+                "due_text": (close_date_val or {}).get("date", ""),
+                "rscore": rscore
+            })
     
     #Slack Summary (new only)
     if SLACK_BOT_TOKEN:
