@@ -5,19 +5,11 @@ from urllib.parse import urlencode
 import time
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
-# Load environment variables from .env file if it exists
-try:
-    from pathlib import Path
-    env_file = Path(__file__).parent.parent / ".env"
-    if env_file.exists():
-        with open(env_file) as f:
-            for line in f:
-                if line.strip() and not line.startswith('#'):
-                    key, value = line.strip().split('=', 1)
-                    os.environ[key] = value
-except Exception as e:
-    pass  # Silently continue if .env file doesn't exist
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # === CONFIG ===
 MONDAY_API_KEY = os.getenv("MONDAY_API_KEY", "")
