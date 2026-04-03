@@ -104,7 +104,7 @@ def sam_search():
 def sam_detail(notice_id: str):
     """Fetch full detail for a single opportunity using v2 API."""
     detail_url = f"https://api.sam.gov/prod/opportunities/v2/{notice_id}"
-    headers = {"User-Agent": "Cognition Scraper/1.0"}
+    headers = {"User-Agent": "Custom Scraper/1.0"}
     r = requests.get(detail_url, headers=headers, timeout=30)
     r.raise_for_status()
     return r.json()
@@ -149,7 +149,7 @@ def monday_create_item(title, agency, close_date_val, link, open_date_val,
         AGENCY_COLUMN: agency or "Unknown",
         DUEDATE_COLUMN: close_date_val,
         LINK_COLUMN: link,
-        "text_mktm7tsx": "Cognition sam.gov",   # Source
+        "text_mktm7tsx": "Custom sam.gov",   # Source
         "date4": open_date_val,                     # Open Date
         "text_mkkqftmh": tpoc_name,                 # TPOC
         "tpoc_email_mkkqgfsv": {"email": tpoc_email, "text": tpoc_name or tpoc_email} if tpoc_email else None,
@@ -196,7 +196,7 @@ def slack_bot_post_new_items(new_items):
         score_text = f" • Relevance: {float(rscore):.1f}%" if rscore else ""
         due_text_fmt = f" • Due {due}" if due else ""
         lines.append(f"• *{title}* ({topic}) – {agency}{score_text}{due_text_fmt}\n<{link}>")
-        client = "Windsurf | Cognition AI"
+        client = "client"
 
     text = "\n".join(lines)
     headers = {
@@ -218,7 +218,7 @@ def slack_bot_notify_no_results(count=0):
         return
 
     text = (
-        f"✅ SAM.gov scan completed successfully – checked {count} opportunities for Cognition, "
+        f"✅ SAM.gov scan completed successfully – checked {count} opportunities for Client, "
         f"no new ones found today.\n"
         f"_(Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')})_"
     )
@@ -257,7 +257,7 @@ def main():
         # Build agency/command string from organizationHierarchy
         orgs = opp.get("organizationHierarchy", [])
         agency = "Unknown Agency"
-        client = "Windsurf | Cognition AI"
+        client = "client"
         command = ""
         if orgs:
             dept = orgs[0].get("name", "")
