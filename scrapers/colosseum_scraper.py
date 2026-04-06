@@ -1,17 +1,14 @@
 """Colosseum (ONI – One Nation Innovation) Marketplace scraper.
 
-Fetches open challenges from the Colosseum marketplace.  The site is a
-Next.js app that requires authentication, so Selenium headless is used
-to log in and extract challenge data.
+Fetches open challenges from the Colosseum marketplace public page.
+The site is a Next.js app that renders challenge cards via client-side
+JavaScript, so Selenium headless is used to render the page.
 
-Source: https://marketplace.gocolosseum.org/dashboard/challenges
+No login is required — challenges are visible on the public homepage.
 
-Credentials are expected as environment variables:
-  COLOSSEUM_EMAIL
-  COLOSSEUM_PASSWORD
+Source: https://marketplace.gocolosseum.org/
 """
 
-import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -22,10 +19,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from base_scraper import BaseScraper, log
 
-COLOSSEUM_LOGIN_URL = "https://marketplace.gocolosseum.org/auth/login"
-COLOSSEUM_CHALLENGES_URL = (
-    "https://marketplace.gocolosseum.org/dashboard/challenges"
-)
+COLOSSEUM_URL = "https://marketplace.gocolosseum.org/"
 COLOSSEUM_BASE = "https://marketplace.gocolosseum.org"
 
 
@@ -50,19 +44,13 @@ def _get_selenium_driver():
 
 
 class ColosseumScraper(BaseScraper):
-    """Scraper for Colosseum marketplace challenges (login-required)."""
+    """Scraper for Colosseum marketplace challenges (public, no login)."""
 
     def __init__(self):
         super().__init__("Colosseum")
-        self.email = os.getenv("COLOSSEUM_EMAIL", "")
-        self.password = os.getenv("COLOSSEUM_PASSWORD", "")
 
     def fetch_data(self) -> Iterable[Dict[str, Any]]:
-        """Fetch challenges from Colosseum marketplace via Selenium login."""
-        if not self.email or not self.password:
-            log("ERROR: COLOSSEUM_EMAIL and COLOSSEUM_PASSWORD must be set")
-            return []
-
+        """Fetch challenges from the Colosseum public homepage via Selenium."""
         try:
             driver = _get_selenium_driver()
         except Exception as e:
@@ -78,41 +66,17 @@ class ColosseumScraper(BaseScraper):
 
             wait = WebDriverWait(driver, 20)
 
-            # Step 1: Login
-            log("Navigating to Colosseum login page...")
-            driver.get(COLOSSEUM_LOGIN_URL)
+            # Navigate to the public homepage which lists challenges
+            log("Navigating to Colosseum public marketplace...")
+            driver.get(COLOSSEUM_URL)
+            time.sleep(5)
+
+            # Scroll to the #explore-challenges section to trigger lazy loading
+            driver.execute_script(
+                "document.getElementById('explore-challenges')?.scrollIntoView()"
+            )
             time.sleep(3)
 
-            # Fill email
-            email_field = wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "input[type='email'], input[name='email'], input[placeholder*='email' i]")
-                )
-            )
-            email_field.clear()
-            email_field.send_keys(self.email)
-
-            # Fill password
-            password_field = driver.find_element(
-                By.CSS_SELECTOR, "input[type='password']"
-            )
-            password_field.clear()
-            password_field.send_keys(self.password)
-
-            # Submit
-            login_btn = driver.find_element(
-                By.CSS_SELECTOR, "button[type='submit'], button:not([type])"
-            )
-            login_btn.click()
-            log("Submitted login credentials...")
-            time.sleep(5)
-
-            # Step 2: Navigate to challenges page
-            log("Navigating to challenges dashboard...")
-            driver.get(COLOSSEUM_CHALLENGES_URL)
-            time.sleep(5)
-
-            # Step 3: Extract challenge cards
             # Try multiple selectors for challenge cards
             selectors = [
                 "[class*='challenge']",
@@ -127,13 +91,15 @@ class ColosseumScraper(BaseScraper):
             for sel in selectors:
                 elems = driver.find_elements(By.CSS_SELECTOR, sel)
                 if elems and len(elems) > 0:
-                    # Filter for elements that look like challenge cards
                     for elem in elems:
                         text = elem.text.strip()
                         if text and len(text) > 20:
                             challenge_elements.append(elem)
                     if challenge_elements:
-                        log(f"Found {len(challenge_elements)} challenges using selector: {sel}")
+                        log(
+                            f"Found {len(challenge_elements)} challenges "
+                            f"using selector: {sel}"
+                        )
                         break
 
             for elem in challenge_elements:
@@ -147,10 +113,13 @@ class ColosseumScraper(BaseScraper):
 
                     # Get link if available
                     link_elems = elem.find_elements(By.TAG_NAME, "a")
-                    url = COLOSSEUM_CHALLENGES_URL
+                    url = COLOSSEUM_URL
                     for le in link_elems:
                         href = le.get_attribute("href") or ""
-                        if href and "challenge" in href.lower():
+                        if href and (
+                            "challenge" in href.lower()
+                            or href.startswith(COLOSSEUM_BASE)
+                        ):
                             url = href
                             break
 
@@ -166,7 +135,6 @@ class ColosseumScraper(BaseScraper):
 
             if not items:
                 log("No structured challenge elements found")
-                # Get page body as fallback
                 body = driver.find_element(By.TAG_NAME, "body").text
                 log(f"Page body (first 500 chars): {body[:500]}")
 
@@ -193,7 +161,7 @@ class ColosseumScraper(BaseScraper):
         return {
             "title": f"ONI Colosseum: {title}" if title else "",
             "description": description,
-            "url": item.get("url", COLOSSEUM_CHALLENGES_URL),
+            "url": item.get("url", COLOSSEUM_URL),
             "deadline": None,
             "agency": "ONI (One Nation Innovation)",
         }

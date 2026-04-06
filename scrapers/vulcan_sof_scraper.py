@@ -8,6 +8,11 @@ Source: https://vulcan-sof.com/login/ng2/search/calls
 Credentials are expected as environment variables:
   VULCAN_SOF_EMAIL
   VULCAN_SOF_PASSWORD
+
+IMPORTANT: Vulcan SOF login requires 2FA (two-factor authentication).
+This scraper must be run in a MONITORED session so that the operator
+can manually input the 2FA code when prompted.  It cannot be fully
+automated without a TOTP secret.
 """
 
 import os

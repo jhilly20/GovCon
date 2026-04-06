@@ -1,17 +1,15 @@
-"""Grants.gov Simpler Search scraper.
+"""Grants.gov opportunity scraper.
 
-Fetches posted and forecasted opportunities from the Grants.gov Simpler
-Grants API for small business / for-profit eligibility.
+Fetches posted and forecasted opportunities from the Grants.gov public
+REST API (search2 endpoint).  No API key or authentication is required.
 
-API: https://api.simpler.grants.gov/v1/opportunities/search
-Source: https://simpler.grants.gov/search
+API docs: https://grants.gov/api/applicant/
+Endpoint: https://api.grants.gov/v1/api/search2
 
-Note: The v1 API requires an API key.  Set the GRANTS_GOV_API_KEY
-environment variable.  If no key is available, falls back to scraping
-the HTML search results page.
+The scraper searches multiple defense/dual-use keywords and deduplicates
+results by opportunity ID.
 """
 
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -20,16 +18,10 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from bs4 import BeautifulSoup
-
 from base_scraper import BaseScraper, clean_html, log
 
-API_URL = "https://api.simpler.grants.gov/v1/opportunities/search"
-SEARCH_URL = (
-    "https://simpler.grants.gov/search"
-    "?eligibility=for_profit_organizations_other_than_small_businesses"
-    ",small_businesses,unrestricted"
-)
+SEARCH_URL = "https://api.grants.gov/v1/api/search2"
+GRANTS_GOV_BASE = "https://www.grants.gov/search-results-detail"
 PAGE_SIZE = 25
 
 # Defense / dual-use search terms
@@ -45,133 +37,82 @@ SEARCH_QUERIES = [
 
 
 class GrantsGovScraper(BaseScraper):
-    """Scraper for Grants.gov opportunities via API or HTML fallback."""
+    """Scraper for Grants.gov opportunities via the public search2 API."""
 
     def __init__(self):
         super().__init__("Grants.gov")
-        self.api_key = os.getenv("GRANTS_GOV_API_KEY", "")
 
     def fetch_data(self) -> Iterable[Dict[str, Any]]:
-        """Fetch opportunities from Grants.gov."""
-        if self.api_key:
-            return self._fetch_api()
-        return self._fetch_html()
-
-    def _fetch_api(self) -> List[Dict[str, Any]]:
-        """Fetch via the Simpler Grants API (requires API key)."""
-        all_items: Dict[str, Dict[str, Any]] = {}  # dedup by opportunity_id
+        """Fetch opportunities from Grants.gov public API."""
+        all_items: Dict[str, Dict[str, Any]] = {}  # dedup by opportunity id
 
         for query in SEARCH_QUERIES:
             try:
                 payload = {
-                    "pagination": {"page_offset": 1, "page_size": PAGE_SIZE},
-                    "query": query,
-                    "filters": {
-                        "opportunity_status": {
-                            "one_of": ["posted", "forecasted"]
-                        },
-                    },
-                }
-                headers = {
-                    "Content-Type": "application/json",
-                    "X-Api-Key": self.api_key,
+                    "keyword": query,
+                    "oppStatuses": "posted|forecasted",
+                    "rows": PAGE_SIZE,
                 }
                 resp = self.session.post(
-                    API_URL, json=payload, headers=headers, timeout=30
+                    SEARCH_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=30,
                 )
                 resp.raise_for_status()
                 data = resp.json()
 
-                opportunities = data.get("data", {}).get("opportunities", [])
-                log(f"Grants.gov API: {len(opportunities)} results for '{query}'")
+                if data.get("errorcode") != 0:
+                    log(f"Grants.gov API error for '{query}': {data.get('msg')}")
+                    continue
+
+                opportunities = data.get("data", {}).get("oppHits", [])
+                hit_count = data.get("data", {}).get("hitCount", 0)
+                log(
+                    f"Grants.gov: {len(opportunities)} of {hit_count} results "
+                    f"for '{query}'"
+                )
 
                 for opp in opportunities:
-                    opp_id = str(opp.get("opportunity_id", ""))
+                    opp_id = str(opp.get("id", ""))
                     if opp_id and opp_id not in all_items:
                         all_items[opp_id] = opp
 
             except Exception as e:
                 log(f"Error querying Grants.gov API for '{query}': {e}")
 
+        log(f"Grants.gov: {len(all_items)} unique opportunities after dedup")
         return list(all_items.values())
-
-    def _fetch_html(self) -> List[Dict[str, Any]]:
-        """Fallback: scrape the Grants.gov HTML search page."""
-        log("No Grants.gov API key, using HTML fallback")
-        try:
-            resp = self.session.get(SEARCH_URL, timeout=30)
-            resp.raise_for_status()
-        except Exception as e:
-            log(f"Error fetching Grants.gov HTML page: {e}")
-            return []
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        items = []
-
-        # Look for opportunity cards/listings
-        cards = soup.find_all(
-            ["article", "div"],
-            class_=lambda c: c and ("opportunity" in str(c).lower() or "result" in str(c).lower()) if c else False,
-        )
-
-        for card in cards:
-            title_el = card.find(["h2", "h3", "h4", "a"])
-            if not title_el:
-                continue
-
-            title = title_el.get_text(strip=True)
-            url = ""
-            link = card.find("a", href=True)
-            if link:
-                href = link["href"]
-                if href.startswith("/"):
-                    url = "https://simpler.grants.gov" + href
-                elif href.startswith("http"):
-                    url = href
-
-            desc = card.get_text(separator=" ", strip=True)[:2000]
-
-            items.append({
-                "title": title,
-                "url": url,
-                "description": desc,
-                "_html": True,
-            })
-
-        return items
 
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract standardised fields from a Grants.gov opportunity."""
-        if item.get("_html"):
-            return {
-                "title": item.get("title", ""),
-                "description": item.get("description", "")[:2000],
-                "url": item.get("url", SEARCH_URL),
-                "deadline": None,
-                "agency": item.get("agency_name", "Federal"),
-            }
+        title = clean_html(item.get("title", ""))
+        opp_number = item.get("number", "")
+        agency = item.get("agency", "")
 
-        # API response fields
-        title = item.get("opportunity_title", "")
-        opp_number = item.get("opportunity_number", "")
-        agency = item.get("agency_name", "")
-        summary = item.get("summary", {})
-        description = summary.get("summary_description", "") if isinstance(summary, dict) else ""
-        description = clean_html(description)
+        # Build URL to the opportunity detail page
+        opp_id = item.get("id", "")
+        url = f"{GRANTS_GOV_BASE}/{opp_id}" if opp_id else ""
 
-        close_date = item.get("close_date")
-        post_date = item.get("post_date")
-
-        opp_id = item.get("opportunity_id", "")
-        url = f"https://simpler.grants.gov/opportunity/{opp_id}" if opp_id else SEARCH_URL
+        # Parse close date from MM/DD/YYYY to YYYY-MM-DD
+        close_date_raw = item.get("closeDate", "")
+        deadline = None
+        if close_date_raw:
+            m = re.match(r"(\d{2})/(\d{2})/(\d{4})", close_date_raw)
+            if m:
+                deadline = f"{m.group(3)}-{m.group(1)}-{m.group(2)}"
 
         full_title = f"[{opp_number}] {title}" if opp_number else title
 
         return {
             "title": full_title,
-            "description": description[:2000],
+            "description": f"Status: {item.get('oppStatus', '')} | "
+            f"Doc Type: {item.get('docType', '')} | "
+            f"Agency: {agency} | "
+            f"Open Date: {item.get('openDate', '')} | "
+            f"Close Date: {close_date_raw or 'N/A'}",
             "url": url,
-            "deadline": close_date,
+            "deadline": deadline,
             "agency": agency,
         }
 
