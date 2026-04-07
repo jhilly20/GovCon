@@ -78,7 +78,7 @@ Create a `.env` file based on `.env.example`:
 # Monday.com (optional - for tracking opportunities)
 MONDAY_API_KEY=your_monday_api_key_here
 MONDAY_BOARD_ID=your_board_id_here
-MONDAY_EVENT_BOARD_ID=8129298829  # Event Dashboard board (industry days)
+MONDAY_EVENT_BOARD_ID=your_event_board_id_here  # Event Dashboard board (industry days)
 
 # Slack (optional - for notifications)
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token-here

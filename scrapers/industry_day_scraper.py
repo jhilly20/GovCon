@@ -44,7 +44,7 @@ SAM_DETAIL_URL = "https://sam.gov/api/prod/opps/v2/opportunities/{}"
 # Monday.com configuration -- Event Dashboard board
 # ---------------------------------------------------------------------------
 MONDAY_API_KEY = os.getenv("MONDAY_API_KEY", "")
-MONDAY_EVENT_BOARD_ID = os.getenv("MONDAY_EVENT_BOARD_ID", "8129298829")
+MONDAY_EVENT_BOARD_ID = os.getenv("MONDAY_EVENT_BOARD_ID", "")
 MONDAY_API_URL = "https://api.monday.com/v2"
 
 # Column IDs on the Event Dashboard board
