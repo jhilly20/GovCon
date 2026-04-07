@@ -10,9 +10,11 @@ Credentials are expected as environment variables:
   VULCAN_SOF_PASSWORD
 
 IMPORTANT: Vulcan SOF login requires 2FA (two-factor authentication).
-This scraper must be run in a MONITORED session so that the operator
-can manually input the 2FA code when prompted.  It cannot be fully
-automated without a TOTP secret.
+The scraper opens a **visible** (non-headless) browser window so the
+operator can enter the 2FA code manually.  Before starting the login
+flow the scraper pauses with an input() prompt so the operator can
+confirm they are ready — this prevents the 2FA code from timing out
+while the browser is still initialising.
 """
 
 import os
@@ -39,14 +41,35 @@ class VulcanSOFScraper(BaseScraper):
         self.email = os.getenv("VULCAN_SOF_EMAIL", "")
         self.password = os.getenv("VULCAN_SOF_PASSWORD", "")
 
+    # Maximum seconds to wait for the operator to complete 2FA
+    _2FA_TIMEOUT = 120
+
     def fetch_data(self) -> Iterable[Dict[str, Any]]:
-        """Fetch open calls from Vulcan SOF via Selenium login."""
+        """Fetch open calls from Vulcan SOF via Selenium login.
+
+        The browser opens in **visible** (non-headless) mode so the
+        operator can manually enter a 2FA code.  A readiness prompt is
+        shown before the login flow begins to prevent the code from
+        timing out.
+        """
         if not self.email or not self.password:
             log("ERROR: VULCAN_SOF_EMAIL and VULCAN_SOF_PASSWORD must be set")
             return []
 
+        # --- Readiness gate ---------------------------------------------------
+        log("Vulcan SOF requires manual 2FA entry in a visible browser window.")
+        log("Have your authenticator app ready before continuing.")
         try:
-            driver = get_selenium_driver(page_load_timeout=45)
+            input(
+                "\n>>> Press ENTER when you are ready to start the login flow "
+                "(2FA will be required shortly after)... "
+            )
+        except EOFError:
+            # Non-interactive environment — proceed immediately
+            log("Non-interactive environment detected, proceeding without prompt.")
+
+        try:
+            driver = get_selenium_driver(page_load_timeout=45, headless=False)
         except Exception as e:
             log(f"Error initializing Selenium driver: {e}")
             return []
@@ -54,16 +77,16 @@ class VulcanSOFScraper(BaseScraper):
         items: List[Dict[str, Any]] = []
 
         try:
-            # Step 1: Login
-            log("Navigating to Vulcan SOF login page...")
-            driver.get(VULCAN_LOGIN_URL)
-            time.sleep(3)
-
             from selenium.webdriver.common.by import By
             from selenium.webdriver.support import expected_conditions as EC
             from selenium.webdriver.support.ui import WebDriverWait
 
             wait = WebDriverWait(driver, 15)
+
+            # Step 1: Login
+            log("Navigating to Vulcan SOF login page...")
+            driver.get(VULCAN_LOGIN_URL)
+            time.sleep(3)
 
             # Find and fill login form
             email_field = wait.until(
@@ -83,15 +106,32 @@ class VulcanSOFScraper(BaseScraper):
                 By.CSS_SELECTOR, "button[type='submit'], button.login-btn, input[type='submit']"
             )
             login_btn.click()
-            log("Submitted login credentials...")
-            time.sleep(5)
+            log("Submitted login credentials — complete 2FA in the browser window...")
 
-            # Step 2: Navigate to search/calls page
+            # Step 2: Wait for 2FA completion ---------------------------------
+            # Poll until the URL changes away from the login/2FA page, which
+            # signals a successful authentication.
+            deadline = time.time() + self._2FA_TIMEOUT
+            authenticated = False
+            while time.time() < deadline:
+                current_url = driver.current_url
+                if "login" not in current_url.lower():
+                    authenticated = True
+                    break
+                time.sleep(2)
+
+            if not authenticated:
+                log(
+                    f"WARNING: 2FA was not completed within {self._2FA_TIMEOUT}s. "
+                    "Attempting to continue, but results may be empty."
+                )
+
+            # Step 3: Navigate to search/calls page
             log("Navigating to calls search page...")
             driver.get(VULCAN_SEARCH_URL)
             time.sleep(5)
 
-            # Step 3: Extract call listings
+            # Step 4: Extract call listings
             # Wait for Angular app to render
             time.sleep(3)
 
@@ -139,18 +179,8 @@ class VulcanSOFScraper(BaseScraper):
                 except Exception as e:
                     log(f"Error parsing call element: {e}")
 
-            # If no structured elements found, try extracting from page body
             if not items:
-                log("No structured elements found, extracting from page body...")
-                body_text = driver.find_element(By.TAG_NAME, "body").text
-                items.append(
-                    {
-                        "title": "Vulcan SOF Open Calls",
-                        "url": VULCAN_SEARCH_URL,
-                        "full_text": body_text[:5000],
-                        "_raw_page": True,
-                    }
-                )
+                log("No structured call elements found on the page.")
 
         except Exception as e:
             log(f"Error during Vulcan SOF scraping: {e}")
@@ -166,10 +196,6 @@ class VulcanSOFScraper(BaseScraper):
         """Extract standardised fields from a Vulcan SOF call."""
         title = item.get("title", "")
         full_text = item.get("full_text", "")
-
-        # Skip raw page dumps
-        if item.get("_raw_page"):
-            return {"title": "", "description": "", "url": "", "deadline": None, "agency": ""}
 
         # Extract description
         description = ""

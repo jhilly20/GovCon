@@ -44,8 +44,8 @@ mutation ($board_id: ID!, $item_name: String!, $column_values: JSON!) {
 """
 
 
-def get_selenium_driver(page_load_timeout: int = 30):
-    """Create a headless Selenium Chrome driver.
+def get_selenium_driver(page_load_timeout: int = 30, headless: bool = True):
+    """Create a Selenium Chrome driver.
 
     Shared helper used by all Selenium-based scrapers so that driver
     configuration stays consistent in one place.
@@ -54,12 +54,16 @@ def get_selenium_driver(page_load_timeout: int = 30):
         page_load_timeout: Maximum seconds to wait for a page to load
             (default 30).  Scrapers that need longer waits (e.g. login
             flows) can pass a higher value.
+        headless: Run Chrome in headless mode (default True).  Set to
+            False for scrapers that require manual interaction such as
+            2FA code entry.
     """
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
 
     options = Options()
-    options.add_argument("--headless=new")
+    if headless:
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
