@@ -12,7 +12,7 @@ utilities (log, clean_html) but manages its own Monday.com integration.
 
 Environment variables:
     MONDAY_API_KEY          Monday.com API token (shared with other scrapers)
-    MONDAY_EVENT_BOARD_ID   Board ID for the Event Dashboard (default: 8129298829)
+    MONDAY_EVENT_BOARD_ID   Board ID for the Event Dashboard
     SAM_API_KEY             SAM.gov API key (optional; search works without it)
     SLACK_BOT_TOKEN         Slack bot token (shared with other scrapers)
     SLACK_CHANNEL           Default Slack channel for notifications
@@ -31,7 +31,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import requests
 
-from base_scraper import clean_html, log
+from base_scraper import log
 
 # ---------------------------------------------------------------------------
 # SAM.gov configuration
