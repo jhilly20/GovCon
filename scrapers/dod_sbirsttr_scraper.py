@@ -169,7 +169,7 @@ class DoDSBIRSTTRScraper(BaseScraper):
         tpoc_name = ""
         tpoc_email = ""
         tpoc_phone = ""
-        managers = item.get("topicManagers", [])
+        managers = item.get("topicManagers") or []
         for mgr in managers:
             if mgr.get("assignmentType") == "TPOC":
                 tpoc_name = mgr.get("name", "")
