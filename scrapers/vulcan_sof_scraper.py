@@ -24,31 +24,11 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from base_scraper import BaseScraper, log
+from base_scraper import BaseScraper, get_selenium_driver, log
 
 VULCAN_LOGIN_URL = "https://vulcan-sof.com/login"
 VULCAN_SEARCH_URL = "https://vulcan-sof.com/login/ng2/search/calls"
 VULCAN_BASE = "https://vulcan-sof.com"
-
-
-def _get_selenium_driver():
-    """Create a headless Selenium Chrome driver."""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(45)
-    return driver
 
 
 class VulcanSOFScraper(BaseScraper):
@@ -66,7 +46,7 @@ class VulcanSOFScraper(BaseScraper):
             return []
 
         try:
-            driver = _get_selenium_driver()
+            driver = get_selenium_driver(page_load_timeout=45)
         except Exception as e:
             log(f"Error initializing Selenium driver: {e}")
             return []

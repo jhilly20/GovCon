@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from base_scraper import BaseScraper, log
+from base_scraper import BaseScraper, get_selenium_driver, log
 
 TRADEWIND_URL = "https://www.tradewindai.com/opportunities"
 TRADEWIND_BASE = "https://www.tradewindai.com"
@@ -25,26 +25,6 @@ TRADEWIND_OPP_PAGES = [
     "https://www.tradewindai.com/tradewinds-opportunity",
     "https://www.tradewindai.com/swarm-forge",
 ]
-
-
-def _get_selenium_driver():
-    """Create a headless Selenium Chrome driver."""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.chrome.service import Service
-
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(30)
-    return driver
 
 
 class TradewindScraper(BaseScraper):
@@ -58,7 +38,7 @@ class TradewindScraper(BaseScraper):
         items: List[Dict[str, Any]] = []
 
         try:
-            driver = _get_selenium_driver()
+            driver = get_selenium_driver()
         except Exception as e:
             log(f"Error initializing Selenium driver: {e}")
             return self._fetch_fallback()

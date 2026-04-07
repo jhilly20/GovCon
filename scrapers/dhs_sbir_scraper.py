@@ -18,30 +18,10 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from base_scraper import BaseScraper, clean_html, log
+from base_scraper import BaseScraper, clean_html, get_selenium_driver, log
 
 DHS_SBIR_URL = "https://oip.dhs.gov/sbir/public"
 DHS_SBIR_FALLBACK_URL = "https://www.sbir.gov/sbirsearch/topic/current/?agency=DHS"
-
-
-def _get_selenium_driver():
-    """Create a headless Selenium Chrome driver."""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(30)
-    return driver
 
 
 class DHSSBIRScraper(BaseScraper):
@@ -61,7 +41,7 @@ class DHSSBIRScraper(BaseScraper):
     def _fetch_primary(self) -> List[Dict[str, Any]]:
         """Try to scrape DHS SBIR from oip.dhs.gov using Selenium."""
         try:
-            driver = _get_selenium_driver()
+            driver = get_selenium_driver()
         except Exception as e:
             log(f"Error initializing Selenium driver: {e}")
             return []
