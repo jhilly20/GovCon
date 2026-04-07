@@ -6,8 +6,8 @@ REST API (search2 endpoint).  No API key or authentication is required.
 API docs: https://grants.gov/api/applicant/
 Endpoint: https://api.grants.gov/v1/api/search2
 
-The scraper searches multiple defense/dual-use keywords and deduplicates
-results by opportunity ID.
+Filters to eligibilities relevant to small / for-profit businesses and
+returns only posted or forecasted opportunities.
 """
 
 import re
@@ -22,18 +22,13 @@ from base_scraper import BaseScraper, clean_html, log
 
 SEARCH_URL = "https://api.grants.gov/v1/api/search2"
 GRANTS_GOV_BASE = "https://www.grants.gov/search-results-detail"
-PAGE_SIZE = 25
+PAGE_SIZE = 250
 
-# Defense / dual-use search terms
-SEARCH_QUERIES = [
-    "defense",
-    "SBIR",
-    "STTR",
-    "dual-use",
-    "national security",
-    "cybersecurity",
-    "artificial intelligence",
-]
+# Eligibility codes that match the user's Simpler Grants search filter:
+#   for_profit_organizations_other_than_small_businesses → 22
+#   small_businesses → 23
+#   unrestricted → 25
+ELIGIBLE_CODES = "22|23|25"
 
 
 class GrantsGovScraper(BaseScraper):
@@ -43,15 +38,17 @@ class GrantsGovScraper(BaseScraper):
         super().__init__("Grants.gov")
 
     def fetch_data(self) -> Iterable[Dict[str, Any]]:
-        """Fetch opportunities from Grants.gov public API."""
+        """Fetch posted/forecasted opportunities eligible for small/for-profit businesses."""
         all_items: Dict[str, Dict[str, Any]] = {}  # dedup by opportunity id
+        page = 0
 
-        for query in SEARCH_QUERIES:
+        while True:
             try:
                 payload = {
-                    "keyword": query,
                     "oppStatuses": "posted|forecasted",
+                    "eligibilities": ELIGIBLE_CODES,
                     "rows": PAGE_SIZE,
+                    "startRecordNum": page * PAGE_SIZE,
                 }
                 resp = self.session.post(
                     SEARCH_URL,
@@ -63,25 +60,35 @@ class GrantsGovScraper(BaseScraper):
                 data = resp.json()
 
                 if data.get("errorcode") != 0:
-                    log(f"Grants.gov API error for '{query}': {data.get('msg')}")
-                    continue
+                    log(f"Grants.gov API error: {data.get('msg')}")
+                    break
 
                 opportunities = data.get("data", {}).get("oppHits", [])
                 hit_count = data.get("data", {}).get("hitCount", 0)
-                log(
-                    f"Grants.gov: {len(opportunities)} of {hit_count} results "
-                    f"for '{query}'"
-                )
+
+                if not opportunities:
+                    break
 
                 for opp in opportunities:
                     opp_id = str(opp.get("id", ""))
                     if opp_id and opp_id not in all_items:
                         all_items[opp_id] = opp
 
-            except Exception as e:
-                log(f"Error querying Grants.gov API for '{query}': {e}")
+                log(
+                    f"Grants.gov: fetched {len(all_items)} of {hit_count} "
+                    f"total results (page {page})"
+                )
 
-        log(f"Grants.gov: {len(all_items)} unique opportunities after dedup")
+                if len(all_items) >= hit_count:
+                    break
+
+                page += 1
+
+            except Exception as e:
+                log(f"Error querying Grants.gov API (page {page}): {e}")
+                break
+
+        log(f"Grants.gov: {len(all_items)} unique opportunities total")
         return list(all_items.values())
 
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
