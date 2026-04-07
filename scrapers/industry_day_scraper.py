@@ -70,7 +70,7 @@ SLACK_CHANNEL = os.getenv("SLACK_CHANNEL", "")
 
 # ===== SAM.gov helpers =====================================================
 
-def sam_search() -> List[Dict[str, Any]]:
+def sam_search(session: requests.Session) -> List[Dict[str, Any]]:
     """Search SAM.gov for active Industry Day special notices."""
     params = {
         "random": str(int(time.time() * 1000)),
@@ -86,7 +86,7 @@ def sam_search() -> List[Dict[str, Any]]:
     }
 
     try:
-        resp = requests.get(SAM_SEARCH_URL, params=params, timeout=60)
+        resp = session.get(SAM_SEARCH_URL, params=params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
@@ -106,10 +106,10 @@ def sam_search() -> List[Dict[str, Any]]:
     return hits
 
 
-def sam_detail(notice_id: str) -> Dict[str, Any]:
+def sam_detail(session: requests.Session, notice_id: str) -> Dict[str, Any]:
     """Fetch the v2 detail JSON for a specific SAM.gov notice."""
     url = SAM_DETAIL_URL.format(notice_id)
-    resp = requests.get(url, timeout=60)
+    resp = session.get(url, timeout=60)
     resp.raise_for_status()
     return resp.json()
 
@@ -297,7 +297,7 @@ def main() -> None:
         ),
     })
 
-    hits = sam_search()
+    hits = sam_search(session)
     if not hits:
         log("No results from SAM.gov search")
         return
@@ -316,7 +316,7 @@ def main() -> None:
 
         if notice_id:
             try:
-                detail_raw = sam_detail(notice_id)
+                detail_raw = sam_detail(session, notice_id)
                 detail_data2 = detail_raw.get("data2", {})
 
                 # Prefer uiLink from detail; fall back to public opp URL
