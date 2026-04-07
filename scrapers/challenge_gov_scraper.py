@@ -1,6 +1,5 @@
 import re
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -8,10 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-import requests
 from bs4 import BeautifulSoup
 
-from base_scraper import BaseScraper, log, clean_html, format_monday_date
+from base_scraper import BaseScraper, log
 
 # USA.gov challenges configuration
 # Challenge.gov has been deprecated; active challenges are now listed on USA.gov
