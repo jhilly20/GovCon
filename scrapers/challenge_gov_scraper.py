@@ -52,6 +52,11 @@ class ChallengeGovScraper(BaseScraper):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         })
 
+    @property
+    def dedup_source_keywords(self):
+        """Match legacy items tagged with 'challenge' or 'usa.gov'."""
+        return ["usa.gov", "challenge"]
+
     def _fetch_challenge_list(self) -> List[Dict[str, Any]]:
         """Scrape the USA.gov active-challenges listing page.
 
