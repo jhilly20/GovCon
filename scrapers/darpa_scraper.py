@@ -95,7 +95,7 @@ class DARPAScraper(BaseScraper):
         # Determine opportunity type from title
         opp_type = ""
         for prefix in ["BAA", "RFI", "CSO", "HR", "PA"]:
-            if prefix in title.upper():
+            if re.search(r'\b' + prefix + r'\b', title.upper()):
                 opp_type = prefix
                 break
 
