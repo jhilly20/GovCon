@@ -75,6 +75,13 @@ def format_monday_date(date_str: Optional[str]) -> Optional[Dict[str, str]]:
             except ValueError:
                 pass
         
+        # Try MM/DD/YYYY HH:MM AM/PM format (common on usa.gov detail pages)
+        if not date_obj:
+            try:
+                date_obj = datetime.strptime(date_str, "%m/%d/%Y %I:%M %p")
+            except ValueError:
+                pass
+
         # Try MM/DD/YYYY format
         if not date_obj:
             try:
