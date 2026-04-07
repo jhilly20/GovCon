@@ -75,6 +75,13 @@ def format_monday_date(date_str: Optional[str]) -> Optional[Dict[str, str]]:
             except ValueError:
                 pass
         
+        # Try MM/DD/YYYY HH:MM AM/PM format (common on usa.gov detail pages)
+        if not date_obj:
+            try:
+                date_obj = datetime.strptime(date_str, "%m/%d/%Y %I:%M %p")
+            except ValueError:
+                pass
+
         # Try MM/DD/YYYY format
         if not date_obj:
             try:
@@ -107,8 +114,13 @@ def normalize_name(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
 
-def fetch_existing_titles_by_source(session: requests.Session, source_name: str, limit: int = 200) -> set:
-    """Fetch existing titles from Monday.com for a specific source to avoid duplicates"""
+def fetch_existing_titles_by_source(session: requests.Session, source_keywords: list, limit: int = 200) -> set:
+    """Fetch existing titles from Monday.com for a specific source to avoid duplicates.
+
+    Args:
+        source_keywords: List of keywords to match against the source column.
+            An item is included if ANY keyword appears in its source value.
+    """
     if not MONDAY_API_KEY:
         return set()
 
@@ -168,7 +180,9 @@ def fetch_existing_titles_by_source(session: requests.Session, source_name: str,
                         break
                 
                 # Only include titles from matching source items
-                if name and source_value and source_name.lower() in source_value.lower():
+                if name and source_value and any(
+                    kw.lower() in source_value.lower() for kw in source_keywords
+                ):
                     titles.add(normalize_name(name))
             cursor = page.get("cursor")
             if not cursor:
@@ -261,6 +275,16 @@ class BaseScraper:
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         })
+
+    @property
+    def dedup_source_keywords(self) -> List[str]:
+        """Keywords matched against the Monday.com source column for dedup.
+
+        An item is considered a duplicate if ANY keyword appears in its
+        source value.  Override in subclasses that need to match legacy
+        source labels (e.g. both 'usa.gov' and 'challenge').
+        """
+        return [self.source_name]
     
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract required fields from item data - to be implemented by subclasses"""
@@ -283,7 +307,7 @@ class BaseScraper:
             if os.getenv("MONDAY_API_KEY"):
                 try:
                     # Fetch existing titles to avoid duplicates for this specific source
-                    existing_titles = fetch_existing_titles_by_source(self.session, self.source_name)
+                    existing_titles = fetch_existing_titles_by_source(self.session, self.dedup_source_keywords)
                     log(f"Fetched {len(existing_titles)} existing {self.source_name} titles from Monday.com")
                 except Exception as e:
                     log(f"Error fetching existing titles from Monday.com: {e}")
