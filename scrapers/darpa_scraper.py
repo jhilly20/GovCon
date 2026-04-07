@@ -71,7 +71,7 @@ class DARPAScraper(BaseScraper):
         description = desc_soup.get_text(separator=" ", strip=True)
 
         # Try to extract a direct link from description (often links to SAM.gov or grants.gov)
-        url = item.get("link", DARPA_PAGE_URL)
+        url = item.get("link") or DARPA_PAGE_URL
         desc_links = desc_soup.find_all("a", href=True)
         for link in desc_links:
             href = link["href"]

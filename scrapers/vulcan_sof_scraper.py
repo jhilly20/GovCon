@@ -109,13 +109,15 @@ class VulcanSOFScraper(BaseScraper):
             log("Submitted login credentials — complete 2FA in the browser window...")
 
             # Step 2: Wait for 2FA completion ---------------------------------
-            # Poll until the URL changes away from the login/2FA page, which
-            # signals a successful authentication.
+            # Poll until the URL moves into the authenticated /login/ng2/
+            # section (e.g. /login/ng2/search/calls).  We cannot simply
+            # check for absence of "login" because the authenticated app
+            # routes also live under /login/ng2/.
             deadline = time.time() + self._2FA_TIMEOUT
             authenticated = False
             while time.time() < deadline:
                 current_url = driver.current_url
-                if "login" not in current_url.lower():
+                if "/ng2/" in current_url:
                     authenticated = True
                     break
                 time.sleep(2)
