@@ -15,6 +15,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 MONDAY_API_KEY = os.getenv("MONDAY_API_KEY", "")
 BOARD_ID = os.getenv("MONDAY_BOARD_ID", "")  # must be string, not int
 
+# Profile name — set by GovCon-Ops runner for multi-profile support
+PROFILE_NAME = "SAM.gov Custom Search"
+
 # Replace these with your real Monday column IDs
 AGENCY_COLUMN = "text_mkvqfmz5"
 DUEDATE_COLUMN = "date_mkkqedzc"
@@ -92,7 +95,7 @@ def sam_search():
     """Search SAM.gov using v1 API with our parameters."""
     query = "&".join(f"{k}={v}" for k, v in params.items())
     url = f"{SEARCH_URL}?{query}"
-    log(f"Searching SAM.gov for COBOL, FORTRAN, refactor, replatform, DevSecOps, or code migration opportunities...")
+    log(f"Searching SAM.gov for {PROFILE_NAME}: {params.get('q', 'N/A')}")
     r = requests.get(url, timeout=60)
     r.raise_for_status()
     data = r.json()
@@ -185,7 +188,7 @@ def slack_bot_post_new_items(new_items):
     if not SLACK_BOT_TOKEN:
         return
 
-    lines = []
+    lines = [f"*{PROFILE_NAME}* — {len(new_items)} new SAM.gov opportunities:"]
     for item in new_items:
         title = item.get("title", "Untitled")
         topic = item.get("topic", "N/A")
@@ -196,7 +199,7 @@ def slack_bot_post_new_items(new_items):
         score_text = f" • Relevance: {float(rscore):.1f}%" if rscore else ""
         due_text_fmt = f" • Due {due}" if due else ""
         lines.append(f"• *{title}* ({topic}) – {agency}{score_text}{due_text_fmt}\n<{link}>")
-        client = "client"
+        client = PROFILE_NAME
 
     text = "\n".join(lines)
     headers = {
@@ -218,7 +221,7 @@ def slack_bot_notify_no_results(count=0):
         return
 
     text = (
-        f"✅ SAM.gov scan completed successfully – checked {count} opportunities for Client, "
+        f"✅ SAM.gov scan completed successfully – checked {count} opportunities for {PROFILE_NAME}, "
         f"no new ones found today.\n"
         f"_(Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')})_"
     )
@@ -257,7 +260,7 @@ def main():
         # Build agency/command string from organizationHierarchy
         orgs = opp.get("organizationHierarchy", [])
         agency = "Unknown Agency"
-        client = "client"
+        client = PROFILE_NAME
         command = ""
         if orgs:
             dept = orgs[0].get("name", "")
