@@ -1,83 +1,52 @@
 # Testing GovCon Scrapers
 
-## Overview
-All scrapers extend `BaseScraper` in `scrapers/base_scraper.py` and follow the same pattern:
-- `fetch_data()` — returns iterable of raw dicts from the source
-- `extract_fields()` — transforms a raw dict into standardized fields: `title`, `description`, `url`, `deadline`, `agency`
-- `run()` — orchestrates fetch → deduplicate → Monday.com upsert → Slack notification
+## Running Scrapers Locally
 
-## Testing Without Credentials (Dry Run)
-Without `MONDAY_API_KEY`, `BaseScraper.run()` prints the first 5 items and skips Monday.com/Slack. You can also call `fetch_data()` and `extract_fields()` directly:
+All BaseScraper-derived scrapers support `--dry-run` mode which fetches data but skips Monday.com and Slack integration:
 
-```python
-from dod_sbirsttr_scraper import DoDSBIRSTTRScraper
-scraper = DoDSBIRSTTRScraper()
-items = list(scraper.fetch_data())
-fields = scraper.extract_fields(items[0])
-print(fields)  # Should have: title, description, url, deadline, agency
+```bash
+cd scrapers && python3 <scraper_name>.py --dry-run
 ```
+
+If `MONDAY_API_KEY` is not set, scrapers automatically skip Monday.com/Slack even without `--dry-run`.
 
 ## Scraper Categories
 
-### API-based (no credentials needed)
-- `dod_sbirsttr_scraper.py` — REST API, requires `Referer: https://www.dodsbirsttr.mil/topics-app/` header
-- `darpa_scraper.py` — RSS feed at `https://www.darpa.mil/rss/opportunities.xml`
-- `erdcwerx_scraper.py` — WordPress REST API, category 6
-- `grantsgov_scraper.py` — needs `GRANTS_GOV_API_KEY` for API mode, falls back to HTML
+### Phase 1 (API/RSS/Selenium)
+- **No auth needed:** `dod_sbirsttr_scraper.py`, `darpa_scraper.py`, `erdcwerx_scraper.py`, `grantsgov_scraper.py`, `diu_scraper.py`, `industry_day_scraper.py`
+- **Selenium, no auth:** `tradewind_scraper.py`, `colosseum_scraper.py`, `dhs_sbir_scraper.py`
+- **Selenium + credentials:** `vulcan_sof_scraper.py` (needs `VULCAN_SOF_EMAIL`, `VULCAN_SOF_PASSWORD`, + 2FA)
 
-### HTML scraping (no credentials needed)
-- `diu_scraper.py` — server-rendered Nuxt.js, may return 0 items if no open solicitations
-- `mitre_aida_scraper.py` — follows 24+ consortium links, slow (~1.5s delay per site)
+### Phase 2 (HTML, no Selenium)
+- `icwerx_scraper.py`, `connectwerx_scraper.py`, `energywerx_scraper.py`, `hswerx_scraper.py`
+- `nam_scraper.py`, `nasa_sbir_scraper.py`, `doe_sbir_scraper.py`
+- `nist_sbir_scraper.py`, `noaa_sbir_scraper.py`, `mitre_aida_scraper.py`
 
-### Selenium headless (credentials or special handling needed)
-- `tradewind_scraper.py` — Wix site, JS-rendered
-- `vulcan_sof_scraper.py` — needs `VULCAN_SOF_EMAIL`, `VULCAN_SOF_PASSWORD`
-- `colosseum_scraper.py` — needs `COLOSSEUM_EMAIL`, `COLOSSEUM_PASSWORD`
-- `dhs_sbir_scraper.py` — Cloudflare-protected, has sbir.gov fallback
+### Legacy (not BaseScraper)
+- `challenge_gov_scraper.py`, `custom_samgov_search.py`, `small_biz_samgov_search.py`, `sda_scraper.py`
 
-## Devin Secrets Needed
-- `MONDAY_API_KEY` — for Monday.com upsert (all scrapers)
-- `SLACK_BOT_TOKEN` — for Slack notifications (all scrapers)
-- `MONDAY_BOARD_ID` — target board ID
-- `SLACK_CHANNEL` — target Slack channel
+## Known Site Quirks
+
+- **EnergyWERX**: Webflow site renders date parts in separate HTML elements. Deadline extraction joins block text before regex search.
+- **NASA SBIR**: `sbir.gov/api/solicitations.json` returns 404. Scraper falls back to HTML page scraping.
+- **MITRE AiDA**: Crawls 37+ consortium sites. Rate-limited with `time.sleep(0.5)` and capped at 15 sites per run. Takes ~30s.
+- **ConnectWERX**: May return 0 items if all opportunities are currently closed (correct behavior).
+- **NIST/NOAA SBIR**: Multiple items may share the same URL. Dedup uses `(URL, title)` tuple key.
+
+## Environment Variables
+
+- `MONDAY_API_KEY` — Required for Monday.com integration
+- `MONDAY_BOARD_ID` — Target board for opportunities
+- `MONDAY_EVENT_BOARD_ID` — Target board for `industry_day_scraper.py`
+- `SLACK_BOT_TOKEN` / `SLACK_CHANNEL` — Slack notifications
+- `SAM_API_KEY` — For SAM.gov scrapers
 - `VULCAN_SOF_EMAIL` / `VULCAN_SOF_PASSWORD` — Vulcan SOF login
-- `COLOSSEUM_EMAIL` / `COLOSSEUM_PASSWORD` — Colosseum/ONI login
-- `GRANTS_GOV_API_KEY` — Grants.gov Simpler API
 
-## Validation Checklist
-For each scraper, verify:
-1. `fetch_data()` returns non-empty list (unless source genuinely has no open items)
-2. `extract_fields()` returns all 5 required fields
-3. `title` is non-empty and HTML-free
-4. `url` points to a valid source page
-5. `deadline` is in YYYY-MM-DD format when present
-6. `agency` is set to a meaningful value
+## Verification Checklist
 
-## Known Issues & Quirks
-- **DoD SBIR/STTR API** requires `Referer` header or returns 403/500
-- **MITRE AiDA WordPress fallback** may pick up non-opportunity content (team bios, events) from consortium sites that use WordPress. Category filtering per site would improve accuracy.
-- **MITRE AiDA** takes 30-60+ seconds for a full run (24+ consortium sites with delays)
-- **DHS SBIR** primary site (oip.dhs.gov) is Cloudflare-protected and will likely block headless Selenium
-- **Tradewind AI** is a Wix site — content is mostly JS-rendered, HTML fallback has limited data
-- **DIU** may return 0 items legitimately when no solicitations are open
-- Selenium scrapers' CSS selectors were written from HTML analysis, not validated against live rendered DOM — they may need tuning
-
-## Running All Scrapers
-```bash
-cd scrapers
-# API-based (fast, no auth)
-python3 dod_sbirsttr_scraper.py
-python3 darpa_scraper.py
-python3 erdcwerx_scraper.py
-python3 diu_scraper.py
-
-# Slow (follows many links)
-python3 mitre_aida_scraper.py
-
-# Selenium (needs chromedriver + possibly credentials)
-python3 tradewind_scraper.py
-python3 vulcan_sof_scraper.py
-python3 colosseum_scraper.py
-python3 dhs_sbir_scraper.py
-python3 grantsgov_scraper.py
-```
+When testing scrapers, verify:
+1. Exit code 0 (no Python exceptions)
+2. `Fetched N items` log line shows expected count
+3. Items have populated `title` and `url` fields
+4. Deadlines are extracted where the site provides them
+5. Closed/past opportunities are filtered out
