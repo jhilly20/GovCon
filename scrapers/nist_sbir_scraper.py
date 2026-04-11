@@ -148,12 +148,14 @@ class NISTSBIRScraper(BaseScraper):
         schedule_items = self._scrape_schedule_page()
         items.extend(schedule_items)
 
-        # Deduplicate by URL
-        seen_urls = set()
+        # Deduplicate by (URL, title) to keep distinct schedule milestones
+        # that share the same page URL
+        seen = set()
         unique_items = []
         for item in items:
-            if item["url"] not in seen_urls:
-                seen_urls.add(item["url"])
+            key = (item["url"], item["title"])
+            if key not in seen:
+                seen.add(key)
                 unique_items.append(item)
 
         return unique_items

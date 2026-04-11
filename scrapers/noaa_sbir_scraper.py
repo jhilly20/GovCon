@@ -167,12 +167,14 @@ class NOAASBIRScraper(BaseScraper):
         if not items:
             items = self._fetch_from_html()
 
-        # Deduplicate by URL
-        seen_urls = set()
+        # Deduplicate by (URL, title) to keep distinct items
+        # that share the same page URL
+        seen = set()
         unique_items = []
         for item in items:
-            if item["url"] not in seen_urls:
-                seen_urls.add(item["url"])
+            key = (item["url"], item["title"])
+            if key not in seen:
+                seen.add(key)
                 unique_items.append(item)
 
         return unique_items
