@@ -107,7 +107,7 @@ class EnergyWERXScraper(BaseScraper):
                 if not re.search(r"deadline", line, re.IGNORECASE):
                     continue
                 m = re.search(
-                    r"(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s*(\d{4})",
+                    r"(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*.*?(\d{4})",
                     line,
                     re.IGNORECASE,
                 )

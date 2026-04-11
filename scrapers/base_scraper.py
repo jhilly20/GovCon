@@ -122,17 +122,31 @@ def format_monday_date(date_str: Optional[str]) -> Optional[Dict[str, str]]:
             except ValueError:
                 pass
         
-        # Try Month DD, YYYY format
+        # Try Month DD, YYYY format (full month name)
         if not date_obj:
             try:
                 date_obj = datetime.strptime(date_str, "%B %d, %Y")
             except ValueError:
                 pass
-        
-        # Try DD Month YYYY format
+
+        # Try Mon DD, YYYY format (abbreviated month name)
+        if not date_obj:
+            try:
+                date_obj = datetime.strptime(date_str, "%b %d, %Y")
+            except ValueError:
+                pass
+
+        # Try DD Month YYYY format (full month name)
         if not date_obj:
             try:
                 date_obj = datetime.strptime(date_str, "%d %B %Y")
+            except ValueError:
+                pass
+
+        # Try DD Mon YYYY format (abbreviated month name)
+        if not date_obj:
+            try:
+                date_obj = datetime.strptime(date_str, "%d %b %Y")
             except ValueError:
                 pass
         
