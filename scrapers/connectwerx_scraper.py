@@ -10,7 +10,7 @@ Source: https://www.connectwerx.org/opportunities/
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable
 
 from dotenv import load_dotenv
 

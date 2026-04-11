@@ -40,7 +40,6 @@ class EnergyWERXScraper(BaseScraper):
 
         soup = BeautifulSoup(resp.text, "html.parser")
         items = []
-        full_text = soup.get_text()
 
         # The page structure has sections: Current, Upcoming, Past
         # Each opportunity has a "More Info" link and deadline info
