@@ -99,22 +99,22 @@ class EnergyWERXScraper(BaseScraper):
                 slug = href.rstrip("/").split("/")[-1]
                 title = slug.replace("-", " ").title()
 
-            # Extract deadline from lines containing "Deadline" keyword
-            # e.g. "Deadline 23 Apr 3:00 pm ET 2026"
+            # Extract deadline from the block text.
+            # Webflow splits date components across separate elements, so
+            # individual lines may be just "Deadline", "23", "Apr", etc.
+            # Join all lines and search the combined text when "Deadline"
+            # appears anywhere in the block.
             deadline = None
-            for line in lines:
-                # Only look for dates on lines that mention "deadline"
-                if not re.search(r"deadline", line, re.IGNORECASE):
-                    continue
+            joined = " ".join(lines)
+            if re.search(r"deadline", joined, re.IGNORECASE):
                 m = re.search(
                     r"(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*.*?(\d{4})",
-                    line,
+                    joined,
                     re.IGNORECASE,
                 )
                 if m:
                     day, month, year = m.group(1), m.group(2), m.group(3)
                     deadline = f"{month} {day}, {year}"
-                    break
 
             # Check for "Coming Soon" / "TBD" deadlines
             if not deadline:
