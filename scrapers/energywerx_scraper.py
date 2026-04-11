@@ -99,15 +99,16 @@ class EnergyWERXScraper(BaseScraper):
                 slug = href.rstrip("/").split("/")[-1]
                 title = slug.replace("-", " ").title()
 
-            # Extract deadline from text like "Deadline 23 Apr 3:00 pm ET 2026"
+            # Extract deadline from lines containing "Deadline" keyword
+            # e.g. "Deadline 23 Apr 3:00 pm ET 2026"
             deadline = None
             for line in lines:
-                if re.match(r"^Deadline", line, re.IGNORECASE):
+                # Only look for dates on lines that mention "deadline"
+                if not re.search(r"deadline", line, re.IGNORECASE):
                     continue
-                # Look for date patterns
                 m = re.search(
                     r"(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s*(\d{4})",
-                    " ".join(lines),
+                    line,
                     re.IGNORECASE,
                 )
                 if m:
