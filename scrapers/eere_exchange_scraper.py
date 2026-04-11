@@ -56,7 +56,7 @@ class EEREExchangeScraper(BaseScraper):
 
         return items
 
-    def _parse_jump_to_listing(self, soup) -> Dict[str, str]:
+    def _parse_jump_to_listing(self, soup) -> Dict[str, Dict[str, str]]:
         """Parse the 'Jump to an Announcement' dropdown for FOA number→title mapping."""
         index = {}
         toggle = soup.find("div", class_="divToggleContent")
@@ -104,6 +104,13 @@ class EEREExchangeScraper(BaseScraper):
             parts = header_text.split(":", 1)
             foa_number = parts[0].strip()
             foa_title = parts[1].strip()
+
+        # Fallback to jump-to-listing index when h2 header lacks a colon
+        if not foa_number and foa_index:
+            foa_id_attr = fg.get("id", "")
+            if foa_id_attr and foa_id_attr in foa_index:
+                foa_number = foa_index[foa_id_attr].get("number", "")
+                foa_title = foa_index[foa_id_attr].get("title", foa_title)
 
         # Description from program_highlights div
         highlights = fg.find("div", class_="program_highlights")
