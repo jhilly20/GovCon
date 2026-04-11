@@ -10,6 +10,7 @@ unreachable.
 No authentication required.
 """
 
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable
@@ -121,7 +122,7 @@ class NSPIRESScraper(BaseScraper):
                 for cell in cells:
                     text = cell.get_text(strip=True)
                     # Look for date patterns
-                    if "/" in text and len(text) <= 12:
+                    if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', text) and len(text) <= 12:
                         if not release_date:
                             release_date = text
                         else:
@@ -162,8 +163,8 @@ class NSPIRESScraper(BaseScraper):
         """Extract standardised fields from a NSPIRES solicitation."""
         return {
             "title": item.get("title", ""),
-            "description": f"Release: {item.get('release_date', 'N/A')} | "
-            f"Close: {item.get('close_date', 'N/A')}",
+            "description": f"Release: {item.get('release_date') or 'N/A'} | "
+            f"Close: {item.get('close_date') or 'N/A'}",
             "url": item.get("url", ""),
             "deadline": item.get("close_date"),
             "agency": "NASA NSPIRES",
