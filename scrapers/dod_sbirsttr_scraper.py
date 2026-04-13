@@ -245,7 +245,7 @@ class DoDSBIRSTTRScraper(BaseScraper):
 
         return {
             "title": full_title,
-            "description": description[:5000],
+            "description": description[:2000],
             "url": url,
             "deadline": deadline,
             "agency": agency,
