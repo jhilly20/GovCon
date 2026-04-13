@@ -137,6 +137,70 @@ class DoDSBIRSTTRScraper(BaseScraper):
         resp.raise_for_status()
         return resp.json()
 
+    def _build_description(self, item: Dict[str, Any], detail: Dict[str, Any]) -> str:
+        """Build a comprehensive description from search + detail API data.
+
+        Combines the topic description, objective, phase descriptions,
+        keywords, technology areas, and focus areas into a single text
+        block suitable for the Monday.com description column.
+        """
+        sections = []
+
+        # Objective (most useful summary — show first)
+        objective = clean_html(detail.get("objective", ""))
+        if objective:
+            sections.append(f"OBJECTIVE: {objective}")
+
+        # Main description
+        description = clean_html(detail.get("description", ""))
+        if description:
+            sections.append(f"DESCRIPTION: {description}")
+
+        # Phase descriptions
+        for phase_key, phase_label in [
+            ("phase1Description", "PHASE I"),
+            ("phase2Description", "PHASE II"),
+            ("phase3Description", "PHASE III"),
+        ]:
+            phase_text = clean_html(detail.get(phase_key, ""))
+            if phase_text:
+                sections.append(f"{phase_label}: {phase_text}")
+
+        # Keywords
+        keywords = detail.get("keywords", "")
+        if keywords:
+            sections.append(f"KEYWORDS: {keywords}")
+
+        # Technology areas & focus areas
+        tech_areas = detail.get("technologyAreas") or []
+        if tech_areas:
+            sections.append(f"TECHNOLOGY AREAS: {', '.join(tech_areas)}")
+
+        focus_areas = detail.get("focusAreas") or []
+        if focus_areas:
+            sections.append(f"FOCUS AREAS: {', '.join(focus_areas)}")
+
+        # ITAR flag
+        if detail.get("itar"):
+            sections.append("ITAR: Yes")
+
+        # CMMC level
+        cmmc = detail.get("cmmcLevel", "")
+        if cmmc:
+            sections.append(f"CMMC LEVEL: {cmmc}")
+
+        # Metadata from search result
+        program = item.get("program", "")
+        solicitation = item.get("solicitationNumber", "")
+        component = item.get("component", "")
+        status = item.get("topicStatus", "")
+
+        if not sections:
+            # Fallback when detail API returned nothing
+            return f"{program} {solicitation} - {component} - {status}"
+
+        return "\n\n".join(sections)
+
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract standardised fields from a topic record."""
         detail = item.get("_detail", {})
@@ -148,11 +212,8 @@ class DoDSBIRSTTRScraper(BaseScraper):
         solicitation = item.get("solicitationNumber", "")
         status = item.get("topicStatus", "")
 
-        # Description from detail
-        description_raw = detail.get("description", "")
-        description = clean_html(description_raw) if description_raw else ""
-        if not description:
-            description = f"{program} {solicitation} - {component} - {status}"
+        # Build comprehensive description from detail API fields
+        description = self._build_description(item, detail)
 
         # Build URL to topic detail page
         url = f"{BASE_URL}/topics-app/#!/topics/{topic_code}" if topic_code else BASE_URL
