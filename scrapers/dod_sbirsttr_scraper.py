@@ -230,7 +230,7 @@ class DoDSBIRSTTRScraper(BaseScraper):
         program = item.get("program", "")  # SBIR or STTR
         solicitation = item.get("solicitationNumber", "")
         status = item.get("topicStatus", "")
-        topic_id = str(item.get("topicId", ""))
+        topic_id = str(item.get("topicId") or "")
 
         # Build comprehensive description from detail API fields
         description = self._build_description(item, detail)
