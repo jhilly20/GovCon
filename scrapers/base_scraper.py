@@ -240,8 +240,14 @@ def fetch_existing_titles_by_source(session: requests.Session, source_keywords: 
         return set()
 
 
-def monday_create_item(session, title, description, url, deadline_val, agency, source_label):
-    """Create a new item in Monday.com"""
+def monday_create_item(session, title, description, url, deadline_val, agency, source_label, extra_columns=None):
+    """Create a new item in Monday.com.
+
+    Args:
+        extra_columns: Optional dict of column_id -> value to set beyond the
+            standard six columns.  Values are merged into the column_values
+            JSON payload sent to the Monday.com API.
+    """
     if not MONDAY_API_KEY:
         raise Exception("MONDAY_API_KEY not available")
     
@@ -253,6 +259,8 @@ def monday_create_item(session, title, description, url, deadline_val, agency, s
         AGENCY_COLUMN: agency,
         SOURCE_COLUMN: source_label,
     }
+    if extra_columns:
+        colvals.update(extra_columns)
     # Remove None values
     colvals = {k: v for k, v in colvals.items() if v is not None}
     
@@ -336,6 +344,15 @@ class BaseScraper:
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract required fields from item data - to be implemented by subclasses"""
         raise NotImplementedError
+
+    def get_extra_column_values(self, item_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return extra Monday.com column_id -> value mappings for this item.
+
+        Override in subclasses that need to populate board columns beyond the
+        standard six (title, description, url, deadline, agency, source).
+        ``item_data`` is the dict returned by :meth:`extract_fields`.
+        """
+        return {}
     
     def fetch_data(self) -> Iterable[Dict[str, Any]]:
         """Fetch data from the source - to be implemented by subclasses"""
@@ -379,6 +396,7 @@ class BaseScraper:
                     
                     if os.getenv("MONDAY_API_KEY"):
                         try:
+                            extra_cols = self.get_extra_column_values(item_data)
                             # Create Monday.com item
                             monday_create_item(
                                 self.session,
@@ -387,7 +405,8 @@ class BaseScraper:
                                 item_data.get("url", ""),
                                 deadline_val,
                                 item_data.get("agency", ""),
-                                f"{self.source_name} python"
+                                f"{self.source_name} python",
+                                extra_columns=extra_cols,
                             )
                             
                             existing_titles.add(title_key)
