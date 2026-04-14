@@ -23,7 +23,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import requests
 
-from base_scraper import BaseScraper, log, clean_html
+from base_scraper import BaseScraper, log, clean_html, format_monday_date
 
 # API configuration
 BASE_URL = "https://www.dodsbirsttr.mil"
@@ -201,6 +201,25 @@ class DoDSBIRSTTRScraper(BaseScraper):
 
         return "\n\n".join(sections)
 
+    # Monday.com column IDs for DoD SBIR/STTR detail fields
+    COL_TPOC = "text_mkkqftmh"
+    COL_TPOC_EMAIL = "tpoc_email_mkmfdxba"  # text column
+    COL_TPOC_PHONE = "tpoc_phone_mkmfav28"
+    COL_COMMAND = "text_mkvqs88k"
+    COL_TECH_AREAS = "text_mkvqe9f9"
+    COL_FOCUS_AREAS = "text_mkvq51gy"
+    COL_KEYWORDS = "text_mkkqnmtk"
+    COL_OBJECTIVE = "text_mkkq8dna"
+    COL_TOPIC_NO = "text_mkktdh29"
+    COL_PHASE1 = "long_text_mkm07mzy"  # long_text type
+    COL_PHASE2 = "long_text_1_mkm0n8s1"  # long_text type
+    COL_PHASE3 = "long_text_2_mkm0612c"  # long_text type
+    COL_PROGRAM = "text_mkm0c9f8"
+    COL_TOPIC_ID = "text_mkm0rbb8"
+    COL_CMMC = "text_mm01k3mw"
+    COL_ITAR = "text_mm01sqgr"
+    COL_OPEN_DATE = "date4"  # date type
+
     def extract_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract standardised fields from a topic record."""
         detail = item.get("_detail", {})
@@ -211,6 +230,7 @@ class DoDSBIRSTTRScraper(BaseScraper):
         program = item.get("program", "")  # SBIR or STTR
         solicitation = item.get("solicitationNumber", "")
         status = item.get("topicStatus", "")
+        topic_id = str(item.get("topicId", ""))
 
         # Build comprehensive description from detail API fields
         description = self._build_description(item, detail)
@@ -238,6 +258,17 @@ class DoDSBIRSTTRScraper(BaseScraper):
                 tpoc_phone = mgr.get("phone", "") if mgr.get("phoneDisplay") == "Y" else ""
                 break
 
+        # Detail API fields
+        objective = clean_html(detail.get("objective", ""))
+        phase1 = clean_html(detail.get("phase1Description", ""))
+        phase2 = clean_html(detail.get("phase2Description", ""))
+        phase3 = clean_html(detail.get("phase3Description", ""))
+        keywords = detail.get("keywords", "")
+        tech_areas = ", ".join(detail.get("technologyAreas") or [])
+        focus_areas = ", ".join(detail.get("focusAreas") or [])
+        itar = "Yes" if detail.get("itar") else "No"
+        cmmc = detail.get("cmmcLevel", "") or ""
+
         # Agency = component (e.g. ARMY, NAVY, AIR FORCE)
         agency = f"DoD {component}" if component else "DoD"
 
@@ -250,6 +281,7 @@ class DoDSBIRSTTRScraper(BaseScraper):
             "deadline": deadline,
             "agency": agency,
             "topic_code": topic_code,
+            "topic_id": topic_id,
             "program": program,
             "solicitation": solicitation,
             "status": status,
@@ -259,7 +291,59 @@ class DoDSBIRSTTRScraper(BaseScraper):
             "tpoc_name": tpoc_name,
             "tpoc_email": tpoc_email,
             "tpoc_phone": tpoc_phone,
+            "objective": objective,
+            "phase1": phase1,
+            "phase2": phase2,
+            "phase3": phase3,
+            "keywords": keywords,
+            "tech_areas": tech_areas,
+            "focus_areas": focus_areas,
+            "itar": itar,
+            "cmmc": cmmc,
+            "component": component,
         }
+
+    def get_extra_column_values(self, item_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Map detail fields to their dedicated Monday.com columns."""
+        cols: Dict[str, Any] = {}
+
+        # Simple text columns
+        _text_map = {
+            self.COL_TPOC: "tpoc_name",
+            self.COL_TPOC_EMAIL: "tpoc_email",
+            self.COL_TPOC_PHONE: "tpoc_phone",
+            self.COL_COMMAND: "component",
+            self.COL_TECH_AREAS: "tech_areas",
+            self.COL_FOCUS_AREAS: "focus_areas",
+            self.COL_KEYWORDS: "keywords",
+            self.COL_OBJECTIVE: "objective",
+            self.COL_TOPIC_NO: "topic_code",
+            self.COL_PROGRAM: "program",
+            self.COL_TOPIC_ID: "topic_id",
+            self.COL_CMMC: "cmmc",
+            self.COL_ITAR: "itar",
+        }
+        for col_id, field_key in _text_map.items():
+            value = item_data.get(field_key, "")
+            if value:
+                cols[col_id] = value
+
+        # Long-text columns require {"text": "..."} format
+        for col_id, field_key in [
+            (self.COL_PHASE1, "phase1"),
+            (self.COL_PHASE2, "phase2"),
+            (self.COL_PHASE3, "phase3"),
+        ]:
+            value = item_data.get(field_key, "")
+            if value:
+                cols[col_id] = {"text": value}
+
+        # Open Date column (date type)
+        open_date = item_data.get("open_date")
+        if open_date:
+            cols[self.COL_OPEN_DATE] = format_monday_date(open_date)
+
+        return cols
 
 
 def main():
